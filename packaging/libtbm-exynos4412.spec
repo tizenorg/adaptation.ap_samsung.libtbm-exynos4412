@@ -21,6 +21,8 @@ autoreconf -vfi
 make %{?jobs:-j%jobs}
 
 %install
+mkdir -p %{buildroot}/usr/share/license
+cp -af COPYING %{buildroot}/usr/share/license/%{name}
 %make_install
 
 
@@ -33,5 +35,6 @@ ln -s libtbm_exynos4412.so %{_libdir}/bufmgr/libtbm_default.so
 %postun -p /sbin/ldconfig
 
 %files
+/usr/share/license/%{name}
 %{_libdir}/bufmgr/libtbm_*.so*
 
