@@ -97,8 +97,8 @@ char* target_name()
 
     return app_name;
 }
-#define TBM_EXYNOS4412_LOG(fmt, args...)		LOGE("\033[31m"  "[%s]" fmt "\033[0m", target_name(), ##args)
-#define DBG(fmt, args...)		if(bDebug&01) LOGE("[%s]" fmt, target_name(), ##args)
+#define TBM_EXYNOS4412_LOG(fmt, args...) LOGE("\033[31m"  "[%s]" fmt "\033[0m", target_name(), ##args)
+#define DBG(fmt, args...)  if(bDebug&01) LOGE(fmt, ##args)
 #else
 #define TBM_EXYNOS4412_LOG(...)
 #define DBG(...)
@@ -270,9 +270,8 @@ _get_name (int fd, unsigned int gem)
     arg.handle = gem;
     if (drmIoctl (fd, DRM_IOCTL_GEM_FLINK, &arg))
     {
-        TBM_EXYNOS4412_LOG ("[libtbm-exynos4412:%d] "
-                 "error %s:%d fail to get flink gem=%d\n",
-                 getpid(), __FUNCTION__, __LINE__, gem);
+        TBM_EXYNOS4412_LOG ("error fail to get flink from gem:%d (DRM_IOCTL_GEM_FLINK)\n",
+                gem);
         return 0;
     }
 
@@ -294,20 +293,25 @@ _exynos4412_bo_handle (tbm_bo_exynos4412 bo_exynos4412, int device)
     case TBM_DEVICE_CPU:
         if (!bo_exynos4412->pBase)
         {
-            struct drm_exynos_gem_mmap arg = {0,};
+            struct drm_mode_map_dumb arg = {0,};
+            void *map = NULL;
 
             arg.handle = bo_exynos4412->gem;
-            arg.size = bo_exynos4412->size;
-            if (drmCommandWriteRead (bo_exynos4412->fd, DRM_EXYNOS_GEM_MMAP, &arg, sizeof(arg)))
+            if (drmIoctl (bo_exynos4412->fd, DRM_IOCTL_MODE_MAP_DUMB, &arg))
             {
-                TBM_EXYNOS4412_LOG ("[libtbm-exynos4412:%d] "
-                         "error %s:%d Cannot usrptr gem=%d\n",
-                         getpid(), __FUNCTION__, __LINE__, bo_exynos4412->gem);
+               TBM_EXYNOS4412_LOG ("error Cannot map_dumb gem=%d\n", bo_exynos4412->gem);
+               return (tbm_bo_handle) NULL;
+            }
+
+            map = mmap (NULL, bo_exynos4412->size, PROT_READ|PROT_WRITE, MAP_SHARED,
+                              bo_exynos4412->fd, arg.offset);
+            if (map == MAP_FAILED)
+            {
+                TBM_EXYNOS4412_LOG ("error Cannot usrptr gem=%d\n", bo_exynos4412->gem);
                 return (tbm_bo_handle) NULL;
             }
-            bo_exynos4412->pBase = (void*)((uint32_t)arg.mapped);
+            bo_exynos4412->pBase = map;
         }
-
         bo_handle.ptr = (void *)bo_exynos4412->pBase;
         break;
     case TBM_DEVICE_3D:
@@ -325,9 +329,7 @@ _exynos4412_bo_handle (tbm_bo_exynos4412 bo_exynos4412, int device)
             arg.handle = bo_exynos4412->gem;
             if (drmIoctl (bo_exynos4412->fd, DRM_IOCTL_PRIME_HANDLE_TO_FD, &arg))
             {
-                TBM_EXYNOS4412_LOG ("[libtbm-exynos4412:%d] "
-                         "error %s:%d Cannot dmabuf=%d\n",
-                         getpid(), __FUNCTION__, __LINE__, bo_exynos4412->gem);
+                TBM_EXYNOS4412_LOG ("error Cannot dmabuf=%d\n", bo_exynos4412->gem);
                 return (tbm_bo_handle) NULL;
             }
             bo_exynos4412->dmabuf = arg.fd;
@@ -344,9 +346,7 @@ _exynos4412_bo_handle (tbm_bo_exynos4412 bo_exynos4412, int device)
             arg.handle = bo_exynos4412->gem;
             if (drmIoctl (bo_exynos4412->fd, DRM_IOCTL_PRIME_HANDLE_TO_FD, &arg))
             {
-                TBM_EXYNOS4412_LOG ("[libtbm-exynos4412:%d] "
-                         "error %s:%d Cannot dmabuf=%d\n",
-                         getpid(), __FUNCTION__, __LINE__, bo_exynos4412->gem);
+                TBM_EXYNOS4412_LOG ("error Cannot dmabuf=%d\n", bo_exynos4412->gem);
                 return (tbm_bo_handle) NULL;
             }
             bo_exynos4412->dmabuf = arg.fd;
@@ -355,9 +355,7 @@ _exynos4412_bo_handle (tbm_bo_exynos4412 bo_exynos4412, int device)
         bo_handle.u32 = (uint32_t)bo_exynos4412->dmabuf;
         break;
     default:
-        TBM_EXYNOS4412_LOG ("[libtbm-exynos4412:%d] "
-                 "error %s:%d Not supported device:%d\n",
-                 getpid(), __FUNCTION__, __LINE__, device);
+        TBM_EXYNOS4412_LOG ("error Not supported device:%d\n", device);
         bo_handle.ptr = (void *) NULL;
         break;
     }
@@ -409,15 +407,11 @@ _exynos4412_cache_flush (int fd, tbm_bo_exynos4412 bo_exynos4412, int flags)
     ret = drmCommandWriteRead (fd, DRM_EXYNOS_GEM_CACHE_OP, &cache_op, sizeof(cache_op));
     if (ret)
     {
-        TBM_EXYNOS4412_LOG ("[libtbm-exynos4412:%d] "
-                 "error %s:%d fail to flush the cache.\n",
-                 getpid(), __FUNCTION__, __LINE__);
+        TBM_EXYNOS4412_LOG ("error fail to flush the cache.\n");
         return 0;
     }
 #else
-    TBM_EXYNOS4412_LOG ("[libtbm-exynos4412:%d] "
-             "warning %s:%d fail to enable the cache flush.\n",
-             getpid(), __FUNCTION__, __LINE__);
+    TBM_EXYNOS4412_LOG ("warning fail to enable the cache flush.\n");
 #endif
     return 1;
 }
@@ -449,9 +443,7 @@ tbm_exynos4412_bo_alloc (tbm_bo bo, int size, int flags)
     bo_exynos4412 = calloc (1, sizeof(struct _tbm_bo_exynos4412));
     if (!bo_exynos4412)
     {
-        TBM_EXYNOS4412_LOG ("[libtbm-exynos4412:%d] "
-                 "error %s:%d fail to allocate the bo private\n",
-                 getpid(), __FUNCTION__, __LINE__);
+        TBM_EXYNOS4412_LOG ("error fail to allocate the bo private\n");
         return 0;
     }
 
@@ -467,9 +459,7 @@ tbm_exynos4412_bo_alloc (tbm_bo bo, int size, int flags)
     arg.flags = exynos_flags;
     if (drmCommandWriteRead(bufmgr_exynos4412->fd, DRM_EXYNOS_GEM_CREATE, &arg, sizeof(arg)))
     {
-        TBM_EXYNOS4412_LOG ("[libtbm-exynos4412:%d] "
-                 "error %s:%d Cannot create bo(flag:%x, size:%d)\n",
-                 getpid(), __FUNCTION__, __LINE__, arg.flags, (unsigned int)arg.size);
+        TBM_EXYNOS4412_LOG ("error Cannot create bo(flag:%x, size:%d)\n", arg.flags, (unsigned int)arg.size);
         free (bo_exynos4412);
         return 0;
     }
@@ -491,9 +481,7 @@ tbm_exynos4412_bo_alloc (tbm_bo bo, int size, int flags)
         arg.handle = bo_exynos4412->gem;
         if (drmIoctl (bo_exynos4412->fd, DRM_IOCTL_PRIME_HANDLE_TO_FD, &arg))
         {
-            TBM_EXYNOS4412_LOG ("[libtbm-exynos4412:%d] "
-                    "error %s:%d Cannot dmabuf=%d\n",
-                    getpid(), __FUNCTION__, __LINE__, bo_exynos4412->gem);
+            TBM_EXYNOS4412_LOG ("error Cannot dmabuf=%d\n", bo_exynos4412->gem);
             free (bo_exynos4412);
             return 0;
         }
@@ -514,15 +502,14 @@ tbm_exynos4412_bo_alloc (tbm_bo bo, int size, int flags)
     privGem->ref_count = 1;
     if (drmHashInsert(bufmgr_exynos4412->hashBos, bo_exynos4412->name, (void *)privGem) < 0)
     {
-        TBM_EXYNOS4412_LOG ("[libtbm-exynos4412:%d] "
-                 "error %s:%d Cannot insert bo to Hash(%d)\n",
-                 getpid(), __FUNCTION__, __LINE__, bo_exynos4412->name);
+        TBM_EXYNOS4412_LOG ("error Cannot insert bo to Hash(%d)\n", bo_exynos4412->name);
     }
 
-    DBG ("[libtbm-exynos4412:%d] %s size:%d, gem:%d(%d), flags:%d(%d)\n", getpid(),
-         __FUNCTION__, bo_exynos4412->size,
+    DBG ("     [%s] bo:%p, gem:%d(%d), flags:%d(%d), size:%d\n", target_name(),
+         bo,
          bo_exynos4412->gem, bo_exynos4412->name,
-         flags, exynos_flags);
+         flags, exynos_flags,
+         bo_exynos4412->size);
 
     return (void *)bo_exynos4412;
 }
@@ -542,16 +529,18 @@ tbm_exynos4412_bo_free(tbm_bo bo)
     bo_exynos4412 = (tbm_bo_exynos4412)tbm_backend_get_bo_priv(bo);
     EXYNOS4412_RETURN_IF_FAIL (bo_exynos4412!=NULL);
 
-    DBG ("[libtbm-exynos4412:%d] %s size:%d, gem:%d(%d)\n",
-         getpid(), __FUNCTION__, bo_exynos4412->size, bo_exynos4412->gem, bo_exynos4412->name);
+    DBG ("      [%s] bo:%p, gem:%d(%d), fd:%d, size:%d\n",target_name(),
+         bo,
+         bo_exynos4412->gem, bo_exynos4412->name,
+         bo_exynos4412->dmabuf,
+         bo_exynos4412->size);
 
     if (bo_exynos4412->pBase)
     {
         if (munmap(bo_exynos4412->pBase, bo_exynos4412->size) == -1)
         {
-            TBM_EXYNOS4412_LOG ("[libtbm-exynos4412:%d] "
-                     "error %s:%d\n",
-                     getpid(), __FUNCTION__, __LINE__);
+            TBM_EXYNOS4412_LOG ("error bo:%p fail to munmap(%s)\n",
+                bo, strerror(errno));
         }
     }
 
@@ -579,9 +568,7 @@ tbm_exynos4412_bo_free(tbm_bo bo)
     }
     else
     {
-        TBM_EXYNOS4412_LOG ("[libtbm-exynos4412:%d] "
-                 "warning %s:%d Cannot find bo to Hash(%d), ret=%d\n",
-                 getpid(), __FUNCTION__, __LINE__, bo_exynos4412->name, ret);
+        TBM_EXYNOS4412_LOG ("warning Cannot find bo to Hash(%d), ret=%d\n", bo_exynos4412->name, ret);
     }
 
     /* Free gem handle */
@@ -590,9 +577,8 @@ tbm_exynos4412_bo_free(tbm_bo bo)
     arg.handle = bo_exynos4412->gem;
     if (drmIoctl (bo_exynos4412->fd, DRM_IOCTL_GEM_CLOSE, &arg))
     {
-        TBM_EXYNOS4412_LOG ("[libtbm-exynos4412:%d] "
-                 "error %s:%d\n",
-                 getpid(), __FUNCTION__, __LINE__);
+        TBM_EXYNOS4412_LOG ("error bo:%p fail to gem close.(%s)\n",
+            bo, strerror(errno));
     }
 
     free (bo_exynos4412);
@@ -616,9 +602,7 @@ tbm_exynos4412_bo_import (tbm_bo bo, unsigned int key)
     arg.name = key;
     if (drmIoctl(bufmgr_exynos4412->fd, DRM_IOCTL_GEM_OPEN, &arg))
     {
-        TBM_EXYNOS4412_LOG ("[libtbm-exynos4412:%d] "
-                "error %s:%d Cannot open gem name=%d\n",
-                getpid(), __FUNCTION__, __LINE__, key);
+        TBM_EXYNOS4412_LOG ("error Cannot open gem name=%d\n", key);
         return 0;
     }
 
@@ -628,18 +612,14 @@ tbm_exynos4412_bo_import (tbm_bo bo, unsigned int key)
                            &info,
                            sizeof(struct drm_exynos_gem_info)))
     {
-        TBM_EXYNOS4412_LOG ("[libtbm-exynos4412:%d] "
-                "error %s:%d Cannot get gem info=%d\n",
-                getpid(), __FUNCTION__, __LINE__, key);
+        TBM_EXYNOS4412_LOG ("error Cannot get gem info=%d\n", key);
         return 0;
     }
 
     bo_exynos4412 = calloc (1, sizeof(struct _tbm_bo_exynos4412));
     if (!bo_exynos4412)
     {
-        TBM_EXYNOS4412_LOG ("[libtbm-exynos4412:%d] "
-                "error %s:%d fail to allocate the bo private\n",
-                getpid(), __FUNCTION__, __LINE__);
+        TBM_EXYNOS4412_LOG ("error fail to allocate the bo private\n");
         return 0;
     }
 
@@ -657,9 +637,7 @@ tbm_exynos4412_bo_import (tbm_bo bo, unsigned int key)
         arg.handle = bo_exynos4412->gem;
         if (drmIoctl (bo_exynos4412->fd, DRM_IOCTL_PRIME_HANDLE_TO_FD, &arg))
         {
-            TBM_EXYNOS4412_LOG ("[libtbm-exynos4412:%d] "
-                    "error %s:%d Cannot dmabuf=%d\n",
-                    getpid(), __FUNCTION__, __LINE__, bo_exynos4412->gem);
+            TBM_EXYNOS4412_LOG ("error Cannot dmabuf=%d\n", bo_exynos4412->gem);
             free (bo_exynos4412);
             return 0;
         }
@@ -690,22 +668,136 @@ tbm_exynos4412_bo_import (tbm_bo bo, unsigned int key)
         privGem->ref_count = 1;
         if (drmHashInsert (bufmgr_exynos4412->hashBos, bo_exynos4412->name, (void *)privGem) < 0)
         {
-            TBM_EXYNOS4412_LOG ("[libtbm-exynos4412:%d] "
-                    "error %s:%d Cannot insert bo to Hash(%d)\n",
-                    getpid(), __FUNCTION__, __LINE__, bo_exynos4412->name);
+            TBM_EXYNOS4412_LOG ("error Cannot insert bo to Hash(%d)\n", bo_exynos4412->name);
         }
     }
     else
     {
-        TBM_EXYNOS4412_LOG ("[libtbm-exynos4412:%d] "
-                "error %s:%d Cannot insert bo to Hash(%d)\n",
-                getpid(), __FUNCTION__, __LINE__, bo_exynos4412->name);
+        TBM_EXYNOS4412_LOG ("error Cannot insert bo to Hash(%d)\n", bo_exynos4412->name);
     }
 
-    DBG ("[libtbm-exynos4412:%d] %s size:%d, gem:%d(%d, %d), flags:%d(%d)\n", getpid(),
-         __FUNCTION__, bo_exynos4412->size,
-         bo_exynos4412->gem, bo_exynos4412->name, bo_exynos4412->dmabuf,
-         bo_exynos4412->flags_tbm, bo_exynos4412->flags_exynos);
+    DBG ("    [%s] bo:%p, gem:%d(%d), fd:%d, flags:%d(%d), size:%d\n", target_name(),
+         bo,
+         bo_exynos4412->gem, bo_exynos4412->name,
+         bo_exynos4412->dmabuf,
+         bo_exynos4412->flags_tbm, bo_exynos4412->flags_exynos,
+         bo_exynos4412->size);
+
+    return (void *)bo_exynos4412;
+}
+
+static void *
+tbm_exynos4412_bo_import_fd (tbm_bo bo, tbm_fd key)
+{
+    EXYNOS4412_RETURN_VAL_IF_FAIL (bo!=NULL, 0);
+
+    tbm_bufmgr_exynos4412 bufmgr_exynos4412;
+    tbm_bo_exynos4412 bo_exynos4412;
+
+    bufmgr_exynos4412 = (tbm_bufmgr_exynos4412)tbm_backend_get_bufmgr_priv(bo);
+    EXYNOS4412_RETURN_VAL_IF_FAIL (bufmgr_exynos4412!=NULL, 0);
+
+    unsigned int gem = 0;
+    unsigned int real_size = -1;
+    struct drm_exynos_gem_info info = {0, };
+
+	//getting handle from fd
+    struct drm_prime_handle arg = {0, };
+
+	arg.fd = key;
+	arg.flags = 0;
+    if (drmIoctl (bufmgr_exynos4412->fd, DRM_IOCTL_PRIME_FD_TO_HANDLE, &arg))
+    {
+        TBM_EXYNOS4412_LOG ("error bo:%p Cannot get gem handle from fd:%d (%s)\n",
+                 bo, arg.fd, strerror(errno));
+        return NULL;
+    }
+    gem = arg.handle;
+
+	/* Determine size of bo.  The fd-to-handle ioctl really should
+	 * return the size, but it doesn't.  If we have kernel 3.12 or
+	 * later, we can lseek on the prime fd to get the size.  Older
+	 * kernels will just fail, in which case we fall back to the
+	 * provided (estimated or guess size). */
+	real_size = lseek(key, 0, SEEK_END);
+
+    info.handle = gem;
+    if (drmCommandWriteRead(bufmgr_exynos4412->fd,
+                           DRM_EXYNOS_GEM_GET,
+                           &info,
+                           sizeof(struct drm_exynos_gem_info)))
+    {
+        TBM_EXYNOS4412_LOG ("error bo:%p Cannot get gem info from gem:%d, fd:%d (%s)\n",
+                bo, gem, key, strerror(errno));
+        return 0;
+    }
+
+    if (real_size == -1)
+    	real_size = info.size;
+
+    bo_exynos4412 = calloc (1, sizeof(struct _tbm_bo_exynos4412));
+    if (!bo_exynos4412)
+    {
+        TBM_EXYNOS4412_LOG ("error bo:%p fail to allocate the bo private\n", bo);
+        return 0;
+    }
+
+    bo_exynos4412->fd = bufmgr_exynos4412->fd;
+    bo_exynos4412->gem = gem;
+    bo_exynos4412->size = real_size;
+    bo_exynos4412->flags_exynos = info.flags;
+    bo_exynos4412->flags_tbm = _get_tbm_flag_from_exynos (bo_exynos4412->flags_exynos);
+
+    bo_exynos4412->name = _get_name(bo_exynos4412->fd, bo_exynos4412->gem);
+    if (!bo_exynos4412->name)
+    {
+        TBM_EXYNOS4412_LOG ("error bo:%p Cannot get name from gem:%d, fd:%d (%s)\n",
+            bo, gem, key, strerror(errno));
+        free (bo_exynos4412);
+        return 0;
+    }
+
+    /* add bo to hash */
+    PrivGem *privGem = NULL;
+    int ret;
+
+    ret = drmHashLookup (bufmgr_exynos4412->hashBos, bo_exynos4412->name, (void**)&privGem);
+    if (ret == 0)
+    {
+        privGem->ref_count++;
+    }
+    else if (ret == 1)
+    {
+        privGem = calloc (1, sizeof(PrivGem));
+        if (!privGem)
+        {
+            TBM_EXYNOS4412_LOG ("[libtbm-exynos4412:%d] "
+                    "error %s:%d Fail to calloc privGem\n",
+                    getpid(), __FUNCTION__, __LINE__);
+            free (bo_exynos4412);
+            return 0;
+        }
+
+        privGem->ref_count = 1;
+        if (drmHashInsert (bufmgr_exynos4412->hashBos, bo_exynos4412->name, (void *)privGem) < 0)
+        {
+            TBM_EXYNOS4412_LOG ("error bo:%p Cannot insert bo to Hash(%d) from gem:%d, fd:%d\n",
+                bo, bo_exynos4412->name, gem, key);
+        }
+    }
+    else
+    {
+        TBM_EXYNOS4412_LOG ("error bo:%p Cannot insert bo to Hash(%d) from gem:%d, fd:%d\n",
+                bo, bo_exynos4412->name, gem, key);
+    }
+
+    DBG (" [%s] bo:%p, gem:%d(%d), fd:%d, key_fd:%d, flags:%d(%d), size:%d\n", target_name(),
+         bo,
+         bo_exynos4412->gem, bo_exynos4412->name,
+         bo_exynos4412->dmabuf,
+         key,
+         bo_exynos4412->flags_tbm, bo_exynos4412->flags_exynos,
+         bo_exynos4412->size);
 
     return (void *)bo_exynos4412;
 }
@@ -725,19 +817,50 @@ tbm_exynos4412_bo_export (tbm_bo bo)
         bo_exynos4412->name = _get_name(bo_exynos4412->fd, bo_exynos4412->gem);
         if (!bo_exynos4412->name)
         {
-            TBM_EXYNOS4412_LOG ("[libtbm-exynos4412:%d] "
-                    "error %s:%d Cannot get name\n",
-                    getpid(), __FUNCTION__, __LINE__);
+            TBM_EXYNOS4412_LOG ("error Cannot get name\n");
             return 0;
         }
     }
 
-    DBG ("[libtbm-exynos4412:%d] %s size:%d, gem:%d(%d), flags:%d(%d)\n", getpid(),
-         __FUNCTION__, bo_exynos4412->size,
+    DBG ("    [%s] bo:%p, gem:%d(%d), fd:%d, flags:%d(%d), size:%d\n", target_name(),
+         bo,
          bo_exynos4412->gem, bo_exynos4412->name,
-         bo_exynos4412->flags_tbm, bo_exynos4412->flags_exynos);
+         bo_exynos4412->dmabuf,
+         bo_exynos4412->flags_tbm, bo_exynos4412->flags_exynos,
+         bo_exynos4412->size);
 
     return (unsigned int)bo_exynos4412->name;
+}
+
+tbm_fd
+tbm_exynos4412_bo_export_fd (tbm_bo bo)
+{
+    EXYNOS4412_RETURN_VAL_IF_FAIL (bo!=NULL, 0);
+
+    tbm_bo_exynos4412 bo_exynos4412;
+
+    bo_exynos4412 = (tbm_bo_exynos4412)tbm_backend_get_bo_priv(bo);
+    EXYNOS4412_RETURN_VAL_IF_FAIL (bo_exynos4412!=NULL, 0);
+
+    struct drm_prime_handle arg = {0, };
+
+    arg.handle = bo_exynos4412->gem;
+    if (drmIoctl (bo_exynos4412->fd, DRM_IOCTL_PRIME_HANDLE_TO_FD, &arg))
+    {
+        TBM_EXYNOS4412_LOG ("error bo:%p Cannot dmabuf=%d (%s)\n",
+            bo, bo_exynos4412->gem, strerror(errno));
+        return (tbm_fd) NULL;
+    }
+
+    DBG (" [%s] bo:%p, gem:%d(%d), fd:%d, key_fd:%d, flags:%d(%d), size:%d\n", target_name(),
+         bo,
+         bo_exynos4412->gem, bo_exynos4412->name,
+         bo_exynos4412->dmabuf,
+         arg.fd,
+         bo_exynos4412->flags_tbm, bo_exynos4412->flags_exynos,
+         bo_exynos4412->size);
+
+    return (tbm_fd)arg.fd;
 }
 
 static tbm_bo_handle
@@ -753,22 +876,23 @@ tbm_exynos4412_bo_get_handle (tbm_bo bo, int device)
 
     if (!bo_exynos4412->gem)
     {
-        TBM_EXYNOS4412_LOG ("[libtbm-exynos4412:%d] "
-                "error %s:%d Cannot map gem=%d\n",
-                getpid(), __FUNCTION__, __LINE__, bo_exynos4412->gem);
+        TBM_EXYNOS4412_LOG ("error Cannot map gem=%d\n", bo_exynos4412->gem);
         return (tbm_bo_handle) NULL;
     }
 
-    DBG ("[libtbm-exynos4412:%d] %s gem:%d(%d), %s\n", getpid(),
-         __FUNCTION__, bo_exynos4412->gem, bo_exynos4412->name, STR_DEVICE[device]);
+    DBG ("[%s] bo:%p, gem:%d(%d), fd:%d, flags:%d(%d), size:%d, %s\n", target_name(),
+         bo,
+         bo_exynos4412->gem, bo_exynos4412->name,
+         bo_exynos4412->dmabuf,
+         bo_exynos4412->flags_tbm, bo_exynos4412->flags_exynos,
+         bo_exynos4412->size,
+         STR_DEVICE[device]);
 
     /*Get mapped bo_handle*/
     bo_handle = _exynos4412_bo_handle (bo_exynos4412, device);
     if (bo_handle.ptr == NULL)
     {
-        TBM_EXYNOS4412_LOG ("[libtbm-exynos4412:%d] "
-                "error %s:%d Cannot get handle: gem:%d, device:%d\n",
-                getpid(), __FUNCTION__, __LINE__, bo_exynos4412->gem, device);
+        TBM_EXYNOS4412_LOG ("error Cannot get handle: gem:%d, device:%d\n", bo_exynos4412->gem, device);
         return (tbm_bo_handle) NULL;
     }
 
@@ -788,22 +912,22 @@ tbm_exynos4412_bo_map (tbm_bo bo, int device, int opt)
 
     if (!bo_exynos4412->gem)
     {
-        TBM_EXYNOS4412_LOG ("[libtbm-exynos4412:%d] "
-                "error %s:%d Cannot map gem=%d\n",
-                getpid(), __FUNCTION__, __LINE__, bo_exynos4412->gem);
+        TBM_EXYNOS4412_LOG ("error Cannot map gem=%d\n", bo_exynos4412->gem);
         return (tbm_bo_handle) NULL;
     }
 
-    DBG ("[libtbm-exynos4412:%d] %s gem:%d(%d), %s, %s\n", getpid(),
-         __FUNCTION__, bo_exynos4412->gem, bo_exynos4412->name, STR_DEVICE[device], STR_OPT[opt]);
+    DBG ("       [%s] bo:%p, gem:%d(%d), fd:%d, %s, %s\n", target_name(),
+         bo,
+         bo_exynos4412->gem, bo_exynos4412->name,
+         bo_exynos4412->dmabuf,
+         STR_DEVICE[device],
+         STR_OPT[opt]);
 
     /*Get mapped bo_handle*/
     bo_handle = _exynos4412_bo_handle (bo_exynos4412, device);
     if (bo_handle.ptr == NULL)
     {
-        TBM_EXYNOS4412_LOG ("[libtbm-exynos4412:%d] "
-                "error %s:%d Cannot get handle: gem:%d, device:%d, opt:%d\n",
-                getpid(), __FUNCTION__, __LINE__, bo_exynos4412->gem, device, opt);
+        TBM_EXYNOS4412_LOG ("error Cannot get handle: gem:%d, device:%d, opt:%d\n", bo_exynos4412->gem, device, opt);
         return (tbm_bo_handle) NULL;
     }
 
@@ -823,8 +947,10 @@ tbm_exynos4412_bo_unmap (tbm_bo bo)
     if (!bo_exynos4412->gem)
         return 0;
 
-    DBG ("[libtbm-exynos4412:%d] %s gem:%d(%d) \n", getpid(),
-         __FUNCTION__, bo_exynos4412->gem, bo_exynos4412->name);
+    DBG ("     [%s] bo:%p, gem:%d(%d), fd:%d\n", target_name(),
+          bo,
+          bo_exynos4412->gem, bo_exynos4412->name,
+          bo_exynos4412->dmabuf);
 
     return 1;
 }
@@ -911,16 +1037,14 @@ tbm_exynos4412_bo_lock(tbm_bo bo, int device, int opt)
     }
     else
     {
-        TBM_EXYNOS4412_LOG ("[libtbm-exynos4412:%d] error %s:%d Invalid argument\n", getpid(), __FUNCTION__, __LINE__);
+        TBM_EXYNOS4412_LOG ("error Invalid argument\n");
         return 0;
     }
 
     /* Check if the tbm manager supports dma fence or not. */
     if (!bufmgr_exynos4412->use_dma_fence)
     {
-        TBM_EXYNOS4412_LOG ("[libtbm-exynos4412:%d] "
-                "error %s:%d  Not support DMA FENCE(%s)\n",
-                getpid(), __FUNCTION__, __LINE__, strerror(errno) );
+        TBM_EXYNOS4412_LOG ("error Not support DMA FENCE(%s)\n", strerror(errno) );
         return 0;
 
     }
@@ -930,9 +1054,7 @@ tbm_exynos4412_bo_lock(tbm_bo bo, int device, int opt)
         ret = ioctl(bo_exynos4412->dmabuf, DMABUF_IOCTL_GET_FENCE, &fence);
         if (ret < 0)
         {
-            TBM_EXYNOS4412_LOG ("[libtbm-exynos4412:%d] "
-                    "error %s:%d  Can not set GET FENCE(%s)\n",
-                    getpid(), __FUNCTION__, __LINE__, strerror(errno) );
+            TBM_EXYNOS4412_LOG ("error Cannot set GET FENCE(%s)\n", strerror(errno) );
             return 0;
         }
     } else
@@ -970,16 +1092,16 @@ tbm_exynos4412_bo_lock(tbm_bo bo, int device, int opt)
         if (i == DMA_FENCE_LIST_MAX)
         {
             //TODO: if dma_fence list is full, it needs realloc. I will fix this. by minseok3.kim
-            TBM_EXYNOS4412_LOG ("[libtbm-exynos4412:%d] "
-                    "error %s:%d  fence list is full\n",
-                    getpid(), __FUNCTION__, __LINE__);
+            TBM_EXYNOS4412_LOG ("error fence list is full\n");
         }
     }
 
     pthread_mutex_unlock(&bo_exynos4412->mutex);
 
-    DBG ("[libtbm-exynos4412:%d] %s DMABUF_IOCTL_GET_FENCE! flink_id=%d dmabuf=%d\n", getpid(),
-            __FUNCTION__, bo_exynos4412->name, bo_exynos4412->dmabuf);
+    DBG ("[%s] DMABUF_IOCTL_GET_FENCE! bo:%p, gem:%d(%d), fd:%ds\n", target_name(),
+          bo,
+          bo_exynos4412->gem, bo_exynos4412->name,
+          bo_exynos4412->dmabuf);
 
     return 1;
 }
@@ -1035,9 +1157,7 @@ tbm_exynos4412_bo_unlock(tbm_bo bo)
         ret = ioctl(bo_exynos4412->dmabuf, DMABUF_IOCTL_PUT_FENCE, &fence);
         if (ret < 0)
         {
-            TBM_EXYNOS4412_LOG ("[libtbm-exynos4412:%d] "
-                    "error %s:%d  Can not set PUT FENCE(%s)\n",
-                    getpid(), __FUNCTION__, __LINE__, strerror(errno) );
+            TBM_EXYNOS4412_LOG ("error Can not set PUT FENCE(%s)\n", strerror(errno));
             return 0;
         }
     } else
@@ -1053,8 +1173,10 @@ tbm_exynos4412_bo_unlock(tbm_bo bo)
 	}
     }
 
-    DBG ("[libtbm-exynos4412:%d] %s DMABUF_IOCTL_PUT_FENCE! flink_id=%d dmabuf=%d\n", getpid(),
-            __FUNCTION__, bo_exynos4412->name, bo_exynos4412->dmabuf);
+    DBG ("[%s] DMABUF_IOCTL_PUT_FENCE! bo:%p, gem:%d(%d), fd:%ds\n", target_name(),
+          bo,
+          bo_exynos4412->gem, bo_exynos4412->name,
+          bo_exynos4412->dmabuf);
 
     return 1;
 }
@@ -1123,14 +1245,14 @@ tbm_exynos4412_surface_supported_format(uint32_t **formats, uint32_t *num)
  * @return 1 if this function succeeds, otherwise 0.
  */
 int
-tbm_exynos4412_surface_get_plane_data(tbm_surface_h surface, int width, int height, tbm_format format, int plane_idx, uint32_t *size, uint32_t *offset, uint32_t *pitch)
+tbm_exynos4412_surface_get_plane_data(tbm_surface_h surface, int width, int height, tbm_format format, int plane_idx, uint32_t *size, uint32_t *offset, uint32_t *pitch, int *bo_idx)
 {
     int ret = 1;
     int bpp;
     int _offset =0;
     int _pitch =0;
     int _size =0;
-
+    int _bo_idx = 0;
 
     switch(format)
     {
@@ -1156,6 +1278,7 @@ tbm_exynos4412_surface_get_plane_data(tbm_surface_h surface, int width, int heig
             _offset = 0;
 			_pitch = SIZE_ALIGN((width*bpp)>>3,TBM_SURFACE_ALIGNMENT_PITCH_RGB);
             _size = SIZE_ALIGN(_pitch*height,TBM_SURFACE_ALIGNMENT_PLANE);
+            _bo_idx = 0;
             break;
         /* 24 bpp RGB */
         case TBM_FORMAT_RGB888:
@@ -1164,6 +1287,7 @@ tbm_exynos4412_surface_get_plane_data(tbm_surface_h surface, int width, int heig
             _offset = 0;
 			_pitch = SIZE_ALIGN((width*bpp)>>3,TBM_SURFACE_ALIGNMENT_PITCH_RGB);
             _size = SIZE_ALIGN(_pitch*height,TBM_SURFACE_ALIGNMENT_PLANE);
+            _bo_idx = 0;
             break;
         /* 32 bpp RGB */
         case TBM_FORMAT_XRGB8888:
@@ -1178,6 +1302,7 @@ tbm_exynos4412_surface_get_plane_data(tbm_surface_h surface, int width, int heig
             _offset = 0;
 			_pitch = SIZE_ALIGN((width*bpp)>>3,TBM_SURFACE_ALIGNMENT_PITCH_RGB);
             _size = SIZE_ALIGN(_pitch*height,TBM_SURFACE_ALIGNMENT_PLANE);
+            _bo_idx = 0;
             break;
 
         /* packed YCbCr */
@@ -1190,6 +1315,7 @@ tbm_exynos4412_surface_get_plane_data(tbm_surface_h surface, int width, int heig
             _offset = 0;
 			_pitch = SIZE_ALIGN((width*bpp)>>3,TBM_SURFACE_ALIGNMENT_PITCH_YUV);
             _size = SIZE_ALIGN(_pitch*height,TBM_SURFACE_ALIGNMENT_PLANE);
+            _bo_idx = 0;
             break;
 
         /*
@@ -1200,6 +1326,22 @@ tbm_exynos4412_surface_get_plane_data(tbm_surface_h surface, int width, int heig
         * index 1 = Cb:Cr plane, [15:0] Cb:Cr little endian
         */
         case TBM_FORMAT_NV12:
+            bpp = 12;
+            if(plane_idx == 0)
+            {
+                _offset = 0;
+				_pitch = SIZE_ALIGN( width ,TBM_SURFACE_ALIGNMENT_PITCH_YUV);
+                _size = SIZE_ALIGN(_pitch*height,TBM_SURFACE_ALIGNMENT_PLANE);
+                _bo_idx = 0;
+            }
+            else if( plane_idx ==1 )
+            {
+                _offset = 0;
+				_pitch = SIZE_ALIGN( width ,TBM_SURFACE_ALIGNMENT_PITCH_YUV/2);
+				_size = SIZE_ALIGN(_pitch*(height/2),TBM_SURFACE_ALIGNMENT_PLANE);
+                _bo_idx = 1;
+            }
+            break;
         case TBM_FORMAT_NV21:
             bpp = 12;
             if(plane_idx == 0)
@@ -1207,12 +1349,14 @@ tbm_exynos4412_surface_get_plane_data(tbm_surface_h surface, int width, int heig
                 _offset = 0;
 				_pitch = SIZE_ALIGN( width ,TBM_SURFACE_ALIGNMENT_PITCH_YUV);
                 _size = SIZE_ALIGN(_pitch*height,TBM_SURFACE_ALIGNMENT_PLANE);
+                _bo_idx = 0;
             }
             else if( plane_idx ==1 )
             {
                 _offset = width*height;
 				_pitch = SIZE_ALIGN( width ,TBM_SURFACE_ALIGNMENT_PITCH_YUV/2);
 				_size = SIZE_ALIGN(_pitch*(height/2),TBM_SURFACE_ALIGNMENT_PLANE);
+                _bo_idx = 0;
             }
             break;
 
@@ -1224,6 +1368,7 @@ tbm_exynos4412_surface_get_plane_data(tbm_surface_h surface, int width, int heig
                 _offset = 0;
 		_pitch = SIZE_ALIGN(width,TBM_SURFACE_ALIGNMENT_PITCH_YUV);
                 _size = SIZE_ALIGN(_pitch*height,TBM_SURFACE_ALIGNMENT_PLANE);
+                _bo_idx = 0;
 		if(plane_idx == 0)
 			break;
             }
@@ -1232,6 +1377,7 @@ tbm_exynos4412_surface_get_plane_data(tbm_surface_h surface, int width, int heig
                 _offset += _size;
 		_pitch = SIZE_ALIGN(width,TBM_SURFACE_ALIGNMENT_PITCH_YUV/2);
                 _size = SIZE_ALIGN(_pitch*height,TBM_SURFACE_ALIGNMENT_PLANE);
+                _bo_idx = 0;
             }
             break;
 
@@ -1251,6 +1397,7 @@ tbm_exynos4412_surface_get_plane_data(tbm_surface_h surface, int width, int heig
         case TBM_FORMAT_YUV410:
         case TBM_FORMAT_YVU410:
             bpp = 9;
+            _bo_idx = 0;
             break;
         case TBM_FORMAT_YUV411:
         case TBM_FORMAT_YVU411:
@@ -1262,6 +1409,7 @@ tbm_exynos4412_surface_get_plane_data(tbm_surface_h surface, int width, int heig
                 _offset = 0;
 		        _pitch = SIZE_ALIGN(width,TBM_SURFACE_ALIGNMENT_PITCH_YUV);
                 _size = SIZE_ALIGN(_pitch*height,TBM_SURFACE_ALIGNMENT_PLANE);
+                _bo_idx = 0;
 		        if(plane_idx == 0)
 			        break;
             }
@@ -1270,6 +1418,7 @@ tbm_exynos4412_surface_get_plane_data(tbm_surface_h surface, int width, int heig
                 _offset += _size;
 		        _pitch = SIZE_ALIGN(width/2,TBM_SURFACE_ALIGNMENT_PITCH_YUV/2);
 		        _size = SIZE_ALIGN(_pitch*(height/2),TBM_SURFACE_ALIGNMENT_PLANE);
+                _bo_idx = 0;
 		        if(plane_idx == 1)
 			        break;
             }
@@ -1278,6 +1427,7 @@ tbm_exynos4412_surface_get_plane_data(tbm_surface_h surface, int width, int heig
                 _offset += _size;
 		        _pitch = SIZE_ALIGN(width/2,TBM_SURFACE_ALIGNMENT_PITCH_YUV/2);
                 _size = SIZE_ALIGN(_pitch*(height/2),TBM_SURFACE_ALIGNMENT_PLANE);
+                _bo_idx = 0;
             }
             break;
         case TBM_FORMAT_YUV422:
@@ -1288,6 +1438,7 @@ tbm_exynos4412_surface_get_plane_data(tbm_surface_h surface, int width, int heig
                 _offset = 0;
 		        _pitch = SIZE_ALIGN(width,TBM_SURFACE_ALIGNMENT_PITCH_YUV);
                 _size = SIZE_ALIGN(_pitch*height,TBM_SURFACE_ALIGNMENT_PLANE);
+                _bo_idx = 0;
 		        if(plane_idx == 0)
 			        break;
             }
@@ -1296,6 +1447,7 @@ tbm_exynos4412_surface_get_plane_data(tbm_surface_h surface, int width, int heig
                 _offset += _size;
 		        _pitch = SIZE_ALIGN(width/2,TBM_SURFACE_ALIGNMENT_PITCH_YUV/2);
 		        _size = SIZE_ALIGN(_pitch*(height),TBM_SURFACE_ALIGNMENT_PLANE);
+                _bo_idx = 0;
 		        if(plane_idx == 1)
 			        break;
             }
@@ -1304,6 +1456,7 @@ tbm_exynos4412_surface_get_plane_data(tbm_surface_h surface, int width, int heig
                 _offset += _size;
 		        _pitch = SIZE_ALIGN(width/2,TBM_SURFACE_ALIGNMENT_PITCH_YUV/2);
                 _size = SIZE_ALIGN(_pitch*(height),TBM_SURFACE_ALIGNMENT_PLANE);
+                _bo_idx = 0;
             }
             break;
         case TBM_FORMAT_YUV444:
@@ -1314,6 +1467,7 @@ tbm_exynos4412_surface_get_plane_data(tbm_surface_h surface, int width, int heig
                 _offset = 0;
 		        _pitch = SIZE_ALIGN(width,TBM_SURFACE_ALIGNMENT_PITCH_YUV);
                 _size = SIZE_ALIGN(_pitch*height,TBM_SURFACE_ALIGNMENT_PLANE);
+                _bo_idx = 0;
 		        if(plane_idx == 0)
 			        break;
             }
@@ -1322,6 +1476,7 @@ tbm_exynos4412_surface_get_plane_data(tbm_surface_h surface, int width, int heig
                 _offset += _size;
 		        _pitch = SIZE_ALIGN(width,TBM_SURFACE_ALIGNMENT_PITCH_YUV);
                 _size = SIZE_ALIGN(_pitch*height,TBM_SURFACE_ALIGNMENT_PLANE);
+                _bo_idx = 0;
 		        if(plane_idx == 1)
 			        break;
             }
@@ -1330,6 +1485,7 @@ tbm_exynos4412_surface_get_plane_data(tbm_surface_h surface, int width, int heig
                 _offset += _size;
   		        _pitch = SIZE_ALIGN(width,TBM_SURFACE_ALIGNMENT_PITCH_YUV);
                _size = SIZE_ALIGN(_pitch*height,TBM_SURFACE_ALIGNMENT_PLANE);
+               _bo_idx = 0;
             }
             break;
         default:
@@ -1340,9 +1496,98 @@ tbm_exynos4412_surface_get_plane_data(tbm_surface_h surface, int width, int heig
     *size = _size;
     *offset = _offset;
     *pitch = _pitch;
+    *bo_idx = _bo_idx;
 
     return ret;
 }
+
+int
+tbm_exynos4412_surface_get_num_bos(tbm_format format)
+{
+	int num = 0;
+
+    switch(format)
+    {
+        /* 16 bpp RGB */
+        case TBM_FORMAT_XRGB4444:
+        case TBM_FORMAT_XBGR4444:
+        case TBM_FORMAT_RGBX4444:
+        case TBM_FORMAT_BGRX4444:
+        case TBM_FORMAT_ARGB4444:
+        case TBM_FORMAT_ABGR4444:
+        case TBM_FORMAT_RGBA4444:
+        case TBM_FORMAT_BGRA4444:
+        case TBM_FORMAT_XRGB1555:
+        case TBM_FORMAT_XBGR1555:
+        case TBM_FORMAT_RGBX5551:
+        case TBM_FORMAT_BGRX5551:
+        case TBM_FORMAT_ARGB1555:
+        case TBM_FORMAT_ABGR1555:
+        case TBM_FORMAT_RGBA5551:
+        case TBM_FORMAT_BGRA5551:
+        case TBM_FORMAT_RGB565:
+        /* 24 bpp RGB */
+        case TBM_FORMAT_RGB888:
+        case TBM_FORMAT_BGR888:
+        /* 32 bpp RGB */
+        case TBM_FORMAT_XRGB8888:
+        case TBM_FORMAT_XBGR8888:
+        case TBM_FORMAT_RGBX8888:
+        case TBM_FORMAT_BGRX8888:
+        case TBM_FORMAT_ARGB8888:
+        case TBM_FORMAT_ABGR8888:
+        case TBM_FORMAT_RGBA8888:
+        case TBM_FORMAT_BGRA8888:
+        /* packed YCbCr */
+        case TBM_FORMAT_YUYV:
+        case TBM_FORMAT_YVYU:
+        case TBM_FORMAT_UYVY:
+        case TBM_FORMAT_VYUY:
+        case TBM_FORMAT_AYUV:
+        /*
+        * 2 plane YCbCr
+        * index 0 = Y plane, [7:0] Y
+        * index 1 = Cr:Cb plane, [15:0] Cr:Cb little endian
+        * or
+        * index 1 = Cb:Cr plane, [15:0] Cb:Cr little endian
+        */
+        case TBM_FORMAT_NV21:
+        case TBM_FORMAT_NV16:
+        case TBM_FORMAT_NV61:
+        /*
+        * 3 plane YCbCr
+        * index 0: Y plane, [7:0] Y
+        * index 1: Cb plane, [7:0] Cb
+        * index 2: Cr plane, [7:0] Cr
+        * or
+        * index 1: Cr plane, [7:0] Cr
+        * index 2: Cb plane, [7:0] Cb
+        */
+        case TBM_FORMAT_YUV410:
+        case TBM_FORMAT_YVU410:
+        case TBM_FORMAT_YUV411:
+        case TBM_FORMAT_YVU411:
+        case TBM_FORMAT_YUV420:
+        case TBM_FORMAT_YVU420:
+        case TBM_FORMAT_YUV422:
+        case TBM_FORMAT_YVU422:
+        case TBM_FORMAT_YUV444:
+        case TBM_FORMAT_YVU444:
+            num = 1;
+            break;
+
+        case TBM_FORMAT_NV12:
+            num = 2;
+            break;
+
+        default:
+            num = 0;
+            break;
+    }
+
+    return num;
+}
+
 /**
 * @brief get the size of the surface with a format.
 * @param[in] surface : the surface
@@ -1528,6 +1773,55 @@ tbm_exynos4412_surface_get_size(tbm_surface_h surface, int width, int height, tb
 
 }
 
+tbm_bo_handle
+tbm_exynos4412_fd_to_handle(tbm_bufmgr bufmgr, tbm_fd fd, int device)
+{
+    EXYNOS4412_RETURN_VAL_IF_FAIL (bufmgr!=NULL, (tbm_bo_handle) NULL);
+    EXYNOS4412_RETURN_VAL_IF_FAIL (fd > 0, (tbm_bo_handle) NULL);
+
+    tbm_bo_handle bo_handle;
+    memset (&bo_handle, 0x0, sizeof (uint64_t));
+
+    tbm_bufmgr_exynos4412 bufmgr_exynos4412 = (tbm_bufmgr_exynos4412)tbm_backend_get_priv_from_bufmgr(bufmgr);
+
+    switch(device)
+    {
+    case TBM_DEVICE_DEFAULT:
+    case TBM_DEVICE_2D:
+    {
+        //getting handle from fd
+        struct drm_prime_handle arg = {0, };
+
+        arg.fd = fd;
+        arg.flags = 0;
+        if (drmIoctl (bufmgr_exynos4412->fd, DRM_IOCTL_PRIME_FD_TO_HANDLE, &arg))
+        {
+            TBM_EXYNOS4412_LOG ("error Cannot get gem handle from fd:%d (%s)\n",
+                     arg.fd, strerror(errno));
+            return (tbm_bo_handle) NULL;
+        }
+
+        bo_handle.u32 = (uint32_t)arg.handle;;
+        break;
+    }
+    case TBM_DEVICE_CPU:
+        TBM_EXYNOS4412_LOG ("Not supported device:%d\n", device);
+        bo_handle.ptr = (void *) NULL;
+        break;
+    case TBM_DEVICE_3D:
+    case TBM_DEVICE_MM:
+        bo_handle.u32 = (uint32_t)fd;
+        break;
+    default:
+        TBM_EXYNOS4412_LOG ("error Not supported device:%d\n", device);
+        bo_handle.ptr = (void *) NULL;
+        break;
+    }
+
+    return bo_handle;
+}
+
+
 MODULEINITPPROTO (init_tbm_bufmgr_priv);
 
 static TBMModuleVersionInfo Exynos4412VersRec =
@@ -1551,14 +1845,14 @@ init_tbm_bufmgr_priv (tbm_bufmgr bufmgr, int fd)
     bufmgr_exynos4412 = calloc (1, sizeof(struct _tbm_bufmgr_exynos4412));
     if (!bufmgr_exynos4412)
     {
-        TBM_EXYNOS4412_LOG ("[libtbm-exynos4412:%d] error: Fail to alloc bufmgr_exynos4412!\n", getpid());
+        TBM_EXYNOS4412_LOG ("error: Fail to alloc bufmgr_exynos4412!\n");
         return 0;
     }
 
     bufmgr_exynos4412->fd = fd;
     if (bufmgr_exynos4412->fd < 0)
     {
-        TBM_EXYNOS4412_LOG ("[libtbm-exynos4412:%d] error: Fail to create drm!\n", getpid());
+        TBM_EXYNOS4412_LOG ("error: Fail to create drm!\n");
         free (bufmgr_exynos4412);
         return 0;
     }
@@ -1583,7 +1877,7 @@ init_tbm_bufmgr_priv (tbm_bufmgr bufmgr, int fd)
     bufmgr_backend = tbm_backend_alloc();
     if (!bufmgr_backend)
     {
-        TBM_EXYNOS4412_LOG ("[libtbm-exynos4412:%d] error: Fail to create drm!\n", getpid());
+        TBM_EXYNOS4412_LOG ("error: Fail to create drm!\n");
         if (bufmgr_exynos4412->hashBos)
             drmHashDestroy (bufmgr_exynos4412->hashBos);
         free (bufmgr_exynos4412);
@@ -1596,7 +1890,9 @@ init_tbm_bufmgr_priv (tbm_bufmgr bufmgr, int fd)
     bufmgr_backend->bo_alloc = tbm_exynos4412_bo_alloc,
     bufmgr_backend->bo_free = tbm_exynos4412_bo_free,
     bufmgr_backend->bo_import = tbm_exynos4412_bo_import,
+    bufmgr_backend->bo_import_fd = tbm_exynos4412_bo_import_fd,
     bufmgr_backend->bo_export = tbm_exynos4412_bo_export,
+    bufmgr_backend->bo_export_fd = tbm_exynos4412_bo_export_fd,
     bufmgr_backend->bo_get_handle = tbm_exynos4412_bo_get_handle,
     bufmgr_backend->bo_map = tbm_exynos4412_bo_map,
     bufmgr_backend->bo_unmap = tbm_exynos4412_bo_unmap,
@@ -1605,6 +1901,8 @@ init_tbm_bufmgr_priv (tbm_bufmgr bufmgr, int fd)
     bufmgr_backend->surface_get_plane_data = tbm_exynos4412_surface_get_plane_data;
     bufmgr_backend->surface_get_size = tbm_exynos4412_surface_get_size;
     bufmgr_backend->surface_supported_format = tbm_exynos4412_surface_supported_format;
+    bufmgr_backend->fd_to_handle = tbm_exynos4412_fd_to_handle;
+    bufmgr_backend->surface_get_num_bos = tbm_exynos4412_surface_get_num_bos;
 
     if (bufmgr_exynos4412->use_dma_fence)
     {
@@ -1622,7 +1920,7 @@ init_tbm_bufmgr_priv (tbm_bufmgr bufmgr, int fd)
 
     if (!tbm_backend_init (bufmgr, bufmgr_backend))
     {
-        TBM_EXYNOS4412_LOG ("[libtbm-exynos4412:%d] error: Fail to init backend!\n", getpid());
+        TBM_EXYNOS4412_LOG ("error: Fail to init backend!\n");
         tbm_backend_free (bufmgr_backend);
         free (bufmgr_exynos4412);
         return 0;
@@ -1644,11 +1942,11 @@ init_tbm_bufmgr_priv (tbm_bufmgr bufmgr, int fd)
     }
 #endif
 
-    DBG ("[libtbm-exynos4412:%d] %s DMABUF FENCE is %s\n", getpid(),
-         __FUNCTION__, bufmgr_exynos4412->use_dma_fence ? "supported!" : "NOT supported!");
+    DBG ("[%s] DMABUF FENCE is %s\n", target_name(),
+          bufmgr_exynos4412->use_dma_fence ? "supported!" : "NOT supported!");
 
-    DBG ("[libtbm-exynos4412:%d] %s fd:%d\n", getpid(),
-         __FUNCTION__, bufmgr_exynos4412->fd);
+    DBG ("[%s] drm_fd:%d\n", target_name(),
+          bufmgr_exynos4412->fd);
 
     return 1;
 }

@@ -1,5 +1,5 @@
 Name:           libtbm-exynos4412
-Version:        1.0.7
+Version:        1.0.9
 Release:        1
 License:        MIT
 Summary:        Tizen Buffer Manager - exynos4412 backend
@@ -13,10 +13,6 @@ BuildRequires:  pkgconfig(libdrm_exynos)
 BuildRequires:  pkgconfig(libtbm)
 BuildRequires:  pkgconfig(dlog)
 
-%if ("%{tizen_profile_name}" == "wearable" && "%{_repository}" == "target-b3")
-Excludearch: %arm
-%endif
-
 %description
 descriptionion: Tizen Buffer manager backend module for exynos4412
 
@@ -25,7 +21,7 @@ descriptionion: Tizen Buffer manager backend module for exynos4412
 
 %build
 
-%reconfigure --prefix=%{_prefix} --libdir=%{_libdir}/bufmgr --disable-cachectrl \
+%reconfigure --prefix=%{_prefix} --libdir=%{_libdir}/bufmgr --enable-cachectrl \
             CFLAGS="${CFLAGS} -Wall -Werror" LDFLAGS="${LDFLAGS} -Wl,--hash-style=both -Wl,--as-needed"
 
 make %{?_smp_mflags}
