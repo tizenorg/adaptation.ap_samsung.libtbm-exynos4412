@@ -46,7 +46,6 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include <xf86drm.h>
 #include <tbm_bufmgr.h>
 #include <tbm_bufmgr_backend.h>
-#include <exynos_drm.h>
 #include <pthread.h>
 #include <tbm_surface.h>
 #include <tbm_surface_internal.h>
@@ -226,19 +225,6 @@ static unsigned int
 _get_exynos_flag_from_tbm (unsigned int ftbm)
 {
     unsigned int flags = 0;
-
-    if (ftbm & TBM_BO_SCANOUT)
-        flags |= EXYNOS_BO_CONTIG;
-    else
-        flags |= EXYNOS_BO_NONCONTIG;
-
-    if (ftbm & TBM_BO_WC)
-        flags |= EXYNOS_BO_WC;
-    else if (ftbm & TBM_BO_NONCACHABLE)
-        flags |= EXYNOS_BO_NONCACHABLE;
-    else
-        flags |= EXYNOS_BO_CACHABLE;
-
     return flags;
 }
 
@@ -247,17 +233,9 @@ _get_tbm_flag_from_exynos (unsigned int fexynos)
 {
     unsigned int flags = 0;
 
-    if (fexynos & EXYNOS_BO_NONCONTIG)
-        flags |= TBM_BO_DEFAULT;
-    else
-        flags |= TBM_BO_SCANOUT;
-
-    if (fexynos & EXYNOS_BO_WC)
-        flags |= TBM_BO_WC;
-    else if (fexynos & EXYNOS_BO_CACHABLE)
-        flags |= TBM_BO_DEFAULT;
-    else
-        flags |= TBM_BO_NONCACHABLE;
+    flags |= TBM_BO_DEFAULT;
+    flags |= TBM_BO_SCANOUT;
+    flags |= TBM_BO_NONCACHABLE;
 
     return flags;
 }
@@ -367,49 +345,7 @@ static int
 _exynos4412_cache_flush (int fd, tbm_bo_exynos4412 bo_exynos4412, int flags)
 {
 #ifdef ENABLE_CACHECRTL
-    struct drm_exynos_gem_cache_op cache_op = {0, };
-    int ret;
-
-    /* if bo_exynos4412 is null, do cache_flush_all */
-    if(bo_exynos4412)
-    {
-        cache_op.flags = 0;
-        cache_op.usr_addr = (uint64_t)((uint32_t)bo_exynos4412->pBase);
-        cache_op.size = bo_exynos4412->size;
-    }
-    else
-    {
-        flags = TBM_CACHE_FLUSH_ALL;
-        cache_op.flags = 0;
-        cache_op.usr_addr = 0;
-        cache_op.size = 0;
-    }
-
-    if (flags & TBM_CACHE_INV)
-    {
-        if(flags & TBM_CACHE_ALL)
-            cache_op.flags |= EXYNOS_DRM_CACHE_INV_ALL;
-        else
-            cache_op.flags |= EXYNOS_DRM_CACHE_INV_RANGE;
-    }
-
-    if (flags & TBM_CACHE_CLN)
-    {
-        if(flags & TBM_CACHE_ALL)
-            cache_op.flags |= EXYNOS_DRM_CACHE_CLN_ALL;
-        else
-            cache_op.flags |= EXYNOS_DRM_CACHE_CLN_RANGE;
-    }
-
-    if(flags & TBM_CACHE_ALL)
-        cache_op.flags |= EXYNOS_DRM_ALL_CACHES_CORES;
-
-    ret = drmCommandWriteRead (fd, DRM_EXYNOS_GEM_CACHE_OP, &cache_op, sizeof(cache_op));
-    if (ret)
-    {
-        TBM_EXYNOS4412_LOG ("error fail to flush the cache.\n");
-        return 0;
-    }
+    TBM_EXYNOS4412_LOG ("warning fail to enable the cache flush.\n");
 #else
     TBM_EXYNOS4412_LOG ("warning fail to enable the cache flush.\n");
 #endif
@@ -448,18 +384,17 @@ tbm_exynos4412_bo_alloc (tbm_bo bo, int size, int flags)
     }
 
     exynos_flags = _get_exynos_flag_from_tbm (flags);
-    if((flags & TBM_BO_SCANOUT) &&
-        size <= 4*1024)
-    {
-        exynos_flags |= EXYNOS_BO_NONCONTIG;
-    }
 
-    struct drm_exynos_gem_create arg = {0, };
-    arg.size = size;
+    struct drm_mode_create_dumb arg = {0, };
+    //as we know only size for new bo set height=1 and bpp=8 and in this case
+    //width will by equal to size in bytes;
+    arg.height = 1;
+    arg.bpp = 8;
+    arg.width = size;
     arg.flags = exynos_flags;
-    if (drmCommandWriteRead(bufmgr_exynos4412->fd, DRM_EXYNOS_GEM_CREATE, &arg, sizeof(arg)))
+    if (drmIoctl (bufmgr_exynos4412->fd, DRM_IOCTL_MODE_CREATE_DUMB, &arg))
     {
-        TBM_EXYNOS4412_LOG ("error Cannot create bo(flag:%x, size:%d)\n", arg.flags, (unsigned int)arg.size);
+        TBM_EXYNOS4412_LOG ("error Cannot create bo(flag:%x, size:%d)\n", arg.flags, (unsigned int)size);
         free (bo_exynos4412);
         return 0;
     }
@@ -597,22 +532,11 @@ tbm_exynos4412_bo_import (tbm_bo bo, unsigned int key)
     EXYNOS4412_RETURN_VAL_IF_FAIL (bufmgr_exynos4412!=NULL, 0);
 
     struct drm_gem_open arg = {0, };
-    struct drm_exynos_gem_info info = {0, };
 
     arg.name = key;
     if (drmIoctl(bufmgr_exynos4412->fd, DRM_IOCTL_GEM_OPEN, &arg))
     {
         TBM_EXYNOS4412_LOG ("error Cannot open gem name=%d\n", key);
-        return 0;
-    }
-
-    info.handle = arg.handle;
-    if (drmCommandWriteRead(bufmgr_exynos4412->fd,
-                           DRM_EXYNOS_GEM_GET,
-                           &info,
-                           sizeof(struct drm_exynos_gem_info)))
-    {
-        TBM_EXYNOS4412_LOG ("error Cannot get gem info=%d\n", key);
         return 0;
     }
 
@@ -626,7 +550,7 @@ tbm_exynos4412_bo_import (tbm_bo bo, unsigned int key)
     bo_exynos4412->fd = bufmgr_exynos4412->fd;
     bo_exynos4412->gem = arg.handle;
     bo_exynos4412->size = arg.size;
-    bo_exynos4412->flags_exynos = info.flags;
+    bo_exynos4412->flags_exynos = 0;
     bo_exynos4412->name = key;
     bo_exynos4412->flags_tbm = _get_tbm_flag_from_exynos (bo_exynos4412->flags_exynos);
 
@@ -699,7 +623,6 @@ tbm_exynos4412_bo_import_fd (tbm_bo bo, tbm_fd key)
 
     unsigned int gem = 0;
     unsigned int real_size = -1;
-    struct drm_exynos_gem_info info = {0, };
 
 	//getting handle from fd
     struct drm_prime_handle arg = {0, };
@@ -721,19 +644,8 @@ tbm_exynos4412_bo_import_fd (tbm_bo bo, tbm_fd key)
 	 * provided (estimated or guess size). */
 	real_size = lseek(key, 0, SEEK_END);
 
-    info.handle = gem;
-    if (drmCommandWriteRead(bufmgr_exynos4412->fd,
-                           DRM_EXYNOS_GEM_GET,
-                           &info,
-                           sizeof(struct drm_exynos_gem_info)))
-    {
-        TBM_EXYNOS4412_LOG ("error bo:%p Cannot get gem info from gem:%d, fd:%d (%s)\n",
-                bo, gem, key, strerror(errno));
-        return 0;
-    }
-
     if (real_size == -1)
-    	real_size = info.size;
+        return 0;
 
     bo_exynos4412 = calloc (1, sizeof(struct _tbm_bo_exynos4412));
     if (!bo_exynos4412)
@@ -745,7 +657,7 @@ tbm_exynos4412_bo_import_fd (tbm_bo bo, tbm_fd key)
     bo_exynos4412->fd = bufmgr_exynos4412->fd;
     bo_exynos4412->gem = gem;
     bo_exynos4412->size = real_size;
-    bo_exynos4412->flags_exynos = info.flags;
+    bo_exynos4412->flags_exynos = 0;
     bo_exynos4412->flags_tbm = _get_tbm_flag_from_exynos (bo_exynos4412->flags_exynos);
 
     bo_exynos4412->name = _get_name(bo_exynos4412->fd, bo_exynos4412->gem);
@@ -1838,9 +1750,17 @@ init_tbm_bufmgr_priv (tbm_bufmgr bufmgr, int fd)
 {
     tbm_bufmgr_exynos4412 bufmgr_exynos4412;
     tbm_bufmgr_backend bufmgr_backend;
+    uint64_t cap = 0;
+    uint32_t ret;
 
     if (!bufmgr)
         return 0;
+
+    ret = drmGetCap(fd, DRM_CAP_DUMB_BUFFER, &cap);
+    if (ret || cap == 0) {
+        TBM_EXYNOS4412_LOG ("error: drm dumb buffer isn't supported !\n");
+        return 0;
+    }
 
     bufmgr_exynos4412 = calloc (1, sizeof(struct _tbm_bufmgr_exynos4412));
     if (!bufmgr_exynos4412)
