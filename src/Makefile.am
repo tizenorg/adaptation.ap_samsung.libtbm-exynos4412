@@ -1,11 +1,11 @@
 AM_CFLAGS = \
-	@LIBTBM_EXYNOS4412_CFLAGS@ \
+	@LIBTBM_DUMB_CFLAGS@ \
 	-I$(top_srcdir) \
 	-I$(top_srcdir)/src
 
-libtbm_exynos4412_la_LTLIBRARIES = libtbm_exynos4412.la
-libtbm_exynos4412_ladir = /${bufmgr_dir}
-libtbm_exynos4412_la_LIBADD = @LIBTBM_EXYNOS4412_LIBS@
+libtbm_dumb_la_LTLIBRARIES = libtbm_dumb.la
+libtbm_dumb_ladir = /${bufmgr_dir}
+libtbm_dumb_la_LIBADD = @LIBTBM_DUMB_LIBS@
 
-libtbm_exynos4412_la_SOURCES = \
-	tbm_bufmgr_exynos4412.c
+libtbm_dumb_la_SOURCES = \
+	tbm_bufmgr_dumb.c
